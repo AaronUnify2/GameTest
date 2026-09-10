@@ -61,10 +61,42 @@
   .banner .big { font-size: 3.8rem; font-weight: 700; letter-spacing: -0.03em; line-height: 1; }
   .banner .sub { color: #ffe08a; font-size: 0.9rem; letter-spacing: 0.04em; }
   .hidden { opacity: 0; }
+
+  /* Score-of-10 message. pointer-events stays none so it never swallows a tap. */
+  .love {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    /* Sits above the ship, which the camera holds at mid-height - the game
+       keeps running underneath, so the message must not cover the play area. */
+    padding: 17vh 24px 0;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.55s ease;
+  }
+  .love.show { opacity: 1; }
+  .love .msg {
+    font-size: 2.7rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    text-align: center;
+    line-height: 1.25;
+    color: #ffdfe9;
+    text-shadow: 0 0 26px rgba(255,90,150,0.6), 0 0 70px rgba(255,50,120,0.4);
+    transform: scale(0.86);
+    transition: transform 0.7s cubic-bezier(0.2, 0.9, 0.25, 1.25);
+  }
+  .love.show .msg { transform: scale(1); }
+  .love .msg span { display: block; font-size: 1.6rem; color: #ff9ec2; margin-top: 6px; }
+
   @media (max-width: 420px) {
     .banner h1 { font-size: 1.9rem; }
     .banner .big { font-size: 3rem; }
     .hud .score { font-size: 1.8rem; }
+    .love .msg { font-size: 1.9rem; }
+    .love .msg span { font-size: 1.2rem; }
   }
 </style>
 </head>
@@ -78,6 +110,10 @@
 
 <div class="banner" id="banner"></div>
 
+<div class="love" id="love">
+  <div class="msg">I love you, Morgan<span>&#9829;</span></div>
+</div>
+
 <script>
 (function () {
   'use strict';
@@ -87,6 +123,7 @@
   var scoreEl = document.getElementById('score');
   var bestEl = document.getElementById('best');
   var bannerEl = document.getElementById('banner');
+  var loveEl = document.getElementById('love');
 
   // ---- tuning -------------------------------------------------------------
   var ORBIT_SPEED = 255;    // px/s travelled along an orbit
@@ -94,6 +131,8 @@
   var MAX_FLIGHT = 1050;    // px of unbroken flight before you're lost to space
   var STAR_GAP = 44;        // how far a star floats above its planet's surface
   var PICKUP = 20;          // how close you must pass to collect one
+  var LOVE_AT = 10;         // score that triggers the message
+  var LOVE_MS = 4600;       // how long it stays on screen
   var TILE = 1400;          // background starfield tile size
 
   var W = 0, H = 0, dpr = 1;
@@ -122,7 +161,8 @@
   // ---- state --------------------------------------------------------------
   var planets, ship, cam, mode, planetIdx, angle, dir, radius;
   var ignoreIdx, pendingIdx, pendingLastD, flightDist;
-  var score, maxIdx, starsGot, best, trail, sparks, started, clock;
+  var score, maxIdx, starsGot, best, trail, sparks, hearts;
+  var started, clock, loveShown, loveTimer;
 
   try { best = parseInt(localStorage.getItem('slingshot-best'), 10) || 0; }
   catch (e) { best = 0; }
@@ -172,8 +212,11 @@
     starsGot = 0;
     trail = [];
     sparks = [];
+    hearts = [];
     started = false;
     clock = 0;
+    hideLove();
+    loveShown = false;   // so it lands again on every fresh run
     ensurePlanets();
     updateScore();
     bestEl.textContent = 'BEST ' + best;
@@ -188,9 +231,39 @@
     bannerEl.classList.remove('hidden');
   }
 
+  // ---- the message --------------------------------------------------------
+  function hideLove() {
+    clearTimeout(loveTimer);
+    loveEl.classList.remove('show');
+  }
+
+  function showLove() {
+    loveEl.classList.add('show');
+    heartBurst();
+    clearTimeout(loveTimer);
+    loveTimer = setTimeout(function () { loveEl.classList.remove('show'); }, LOVE_MS);
+  }
+
+  function heartBurst() {
+    for (var i = 0; i < 22; i++) {
+      hearts.push({
+        x: ship.x + (Math.random() * 2 - 1) * 50,
+        y: ship.y + (Math.random() * 2 - 1) * 36,
+        vx: (Math.random() * 2 - 1) * 48,
+        vy: -34 - Math.random() * 66,
+        size: 10 + Math.random() * 16,
+        life: 1
+      });
+    }
+  }
+
   function updateScore() {
     score = maxIdx + starsGot;
     scoreEl.textContent = String(score);
+    if (!loveShown && score >= LOVE_AT) {
+      loveShown = true;
+      showLove();
+    }
   }
 
   // ---- input --------------------------------------------------------------
@@ -217,6 +290,7 @@
   // ---- capture ------------------------------------------------------------
   function die() {
     mode = 'dead';
+    hideLove();
     if (score > best) {
       best = score;
       try { localStorage.setItem('slingshot-best', String(best)); } catch (e) {}
@@ -319,6 +393,14 @@
       if (s.life <= 0) sparks.splice(k, 1);
     }
 
+    for (var m = hearts.length - 1; m >= 0; m--) {
+      var h = hearts[m];
+      h.x += h.vx * dt; h.y += h.vy * dt;
+      h.vx *= 0.97; h.vy += 9 * dt;
+      h.life -= dt * 0.3;
+      if (h.life <= 0) hearts.splice(m, 1);
+    }
+
     // While orbiting, follow the planet rather than the ship - no camera wobble.
     var tx, ty;
     if (mode === 'orbit') { tx = planets[planetIdx].x; ty = planets[planetIdx].y; }
@@ -399,6 +481,18 @@
     }
   }
 
+  function drawHearts() {
+    if (!hearts.length) return;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (var i = 0; i < hearts.length; i++) {
+      var h = hearts[i];
+      ctx.font = h.size + 'px serif';
+      ctx.fillStyle = 'rgba(255,120,165,' + Math.max(h.life, 0) * 0.9 + ')';
+      ctx.fillText('♥', h.x - cam.x, h.y - cam.y);
+    }
+  }
+
   function drawShip() {
     for (var i = 1; i < trail.length; i++) {
       var t = i / trail.length;
@@ -440,6 +534,7 @@
     drawBackground();
     for (var i = 0; i < planets.length; i++) drawPlanet(planets[i]);
     drawSparks();
+    drawHearts();
     drawShip();
   }
 
@@ -467,6 +562,8 @@
         mode: mode, score: score, planetIdx: planetIdx, maxIdx: maxIdx,
         starsGot: starsGot, x: ship.x, y: ship.y, angle: angle, dir: dir,
         radius: radius, vx: ship.vx, vy: ship.vy,
+        loveShown: loveShown, loveVisible: loveEl.classList.contains('show'),
+        hearts: hearts.length,
         planets: planets.map(function (p) {
           return { x: p.x, y: p.y, r: p.r, capture: p.capture, got: p.star.got };
         })
