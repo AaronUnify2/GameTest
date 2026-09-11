@@ -121,6 +121,7 @@
   <h1>Constellation</h1>
   <p>Release from orbit and drift until another world catches you. Land on a matching colour to draw a line between them.</p>
   <p>Keep the colour going and the chain grows. Break it, and the shape you drew is banked and gone.</p>
+  <p>Striped worlds join any colour &mdash; land on one and the chain is open again.</p>
   <p><span class="key">tap</span> or <span class="key">space</span> to release</p>
 </div>
 
@@ -155,8 +156,10 @@
     { h: 212, s: 90, l: 66, ring: 'solid'  },  // blue
     { h: 38,  s: 92, l: 60, ring: 'dashed' },  // amber
     { h: 312, s: 76, l: 64, ring: 'double' },  // magenta
-    { h: 138, s: 60, l: 46, ring: 'dotted' }   // green, deliberately darker
+    { h: 138, s: 60, l: 46, ring: 'dotted' },  // green, deliberately darker
+    { h: 0,   s: 0,  l: 86, ring: 'wild'   }   // wildcard - joins any colour
   ];
+  var WILD = 4;
 
   // Lightness and alpha vary per use; hue and saturation identify the colour.
   function hsl(c, dl, a) {
@@ -196,6 +199,13 @@
 
   var cells = new Map();
 
+  // Two parts per colour against one part wildcard, so a wildcard turns up
+  // half as often as any single colour: 2/9 each, 1/9 wild.
+  function wildRoll(r) {
+    var roll = r * (WILD * 2 + 1);
+    return roll < WILD * 2 ? Math.floor(roll / 2) : WILD;
+  }
+
   function planetForCell(cx, cy) {
     var key = cx + ',' + cy;
     if (cells.has(key)) return cells.get(key);
@@ -210,7 +220,7 @@
         y: (cy + 0.18 + rnd() * 0.64) * CELL,
         r: r,
         capture: r + 78,
-        colour: Math.floor(rnd() * COLOURS.length),
+        colour: wildRoll(rnd()),
         spin: (rnd() < 0.5 ? -1 : 1) * (0.2 + rnd() * 0.3),
         phase: rnd() * Math.PI * 2
       };
@@ -275,6 +285,12 @@
 
   function pairKey(a, b) { return a < b ? a + '|' + b : b + '|' + a; }
 
+  // A wildcard joins anything, and once you are standing on one the chain is
+  // open - the next world you reach sets the colour and the chain carries on.
+  function joins(colour) {
+    return colour === chainColour || colour === WILD || chainColour === WILD;
+  }
+
   function start() {
     var p = planetForCell(0, 0);
     orbitPlanet = p;
@@ -300,9 +316,16 @@
     if (chainLen >= 1 && chainColour >= 0) {
       chainEl.hidden = false;
       var c = COLOURS[chainColour];
-      chainLabelEl.textContent = 'CHAIN ×' + chainLen;
-      chainLabelEl.style.color = hsl(c, 8);
-      chainBarEl.style.background = hsl(c, 0);
+      if (chainColour === WILD) {
+        chainLabelEl.textContent = 'CHAIN ×' + chainLen + ' · ANY';
+        chainLabelEl.style.color = '#e8ecf5';
+        chainBarEl.style.background = 'linear-gradient(90deg,' + [0, 1, 2, 3]
+          .map(function (i) { return hsl(COLOURS[i], 0); }).join(',') + ')';
+      } else {
+        chainLabelEl.textContent = 'CHAIN ×' + chainLen;
+        chainLabelEl.style.color = hsl(c, 8);
+        chainBarEl.style.background = hsl(c, 0);
+      }
     } else {
       chainEl.hidden = true;
     }
@@ -331,7 +354,7 @@
       chainColour = p.colour;
       chainLen = 1;
       chainScore = 0;
-    } else if (p.colour === chainColour) {
+    } else if (joins(p.colour)) {
       var pk = pairKey(lastPlanet.key, p.key);
       // Re-flying a line you already drew keeps the chain alive but pays
       // nothing, so bouncing between two worlds is not a scoring strategy.
@@ -348,6 +371,9 @@
           bestEl.textContent = 'BEST ' + best;
         }
       }
+      // The colour handover happens whether or not this line was already
+      // drawn: standing on a wildcard opens the chain either way.
+      chainColour = p.colour;
     } else {
       breakChain();
       chainColour = p.colour;
@@ -400,7 +426,7 @@
     var best = null, bestD = Infinity;
     for (var i = 0; i < list.length; i++) {
       var p = list[i];
-      if (p.colour !== chainColour) continue;
+      if (!joins(p.colour)) continue;
       if (p.key === lastPlanet.key) continue;
       if (linkedPairs.has(pairKey(lastPlanet.key, p.key))) continue;
       var d = Math.hypot(p.x - ship.x, p.y - ship.y);
@@ -513,6 +539,19 @@
   }
 
   function drawRing(p, px, alpha) {
+    if (p.colour === WILD) {
+      var spin = p.phase - clock * 0.5;
+      ctx.lineWidth = 1.9 * px;
+      for (var w = 0; w < WILD; w++) {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r + 9,
+                spin + w * Math.PI / 2 + 0.13,
+                spin + (w + 1) * Math.PI / 2 - 0.13);
+        ctx.strokeStyle = hsl(COLOURS[w], 10, alpha);
+        ctx.stroke();
+      }
+      return;
+    }
     var c = COLOURS[p.colour];
     ctx.strokeStyle = hsl(c, 10, alpha);
     ctx.lineWidth = 1.4 * px;
@@ -532,7 +571,7 @@
 
   function drawPlanet(p, px) {
     var c = COLOURS[p.colour];
-    var match = p.colour === chainColour;
+    var match = joins(p.colour);
 
     ctx.beginPath();
     ctx.arc(p.x, p.y, p.capture, 0, Math.PI * 2);
@@ -544,13 +583,34 @@
 
     ctx.save();
     if (!match) ctx.globalAlpha = 0.7;
-    var g = ctx.createRadialGradient(p.x - p.r * 0.35, p.y - p.r * 0.35, p.r * 0.1, p.x, p.y, p.r);
-    g.addColorStop(0, hsl(c, 6));
-    g.addColorStop(1, hsl(c, -32));
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-    ctx.fillStyle = g;
-    ctx.fill();
+    if (p.colour === WILD) {
+      // Four slowly turning wedges, then a spherical shade over the top.
+      var t = clock * 0.35 + p.phase;
+      for (var w = 0; w < WILD; w++) {
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y);
+        ctx.arc(p.x, p.y, p.r, t + w * Math.PI / 2, t + (w + 1) * Math.PI / 2);
+        ctx.closePath();
+        ctx.fillStyle = hsl(COLOURS[w], 2);
+        ctx.fill();
+      }
+      var sh = ctx.createRadialGradient(p.x - p.r * 0.35, p.y - p.r * 0.35, p.r * 0.1, p.x, p.y, p.r);
+      sh.addColorStop(0, 'rgba(255,255,255,0.38)');
+      sh.addColorStop(0.55, 'rgba(255,255,255,0)');
+      sh.addColorStop(1, 'rgba(0,0,0,0.45)');
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fillStyle = sh;
+      ctx.fill();
+    } else {
+      var g = ctx.createRadialGradient(p.x - p.r * 0.35, p.y - p.r * 0.35, p.r * 0.1, p.x, p.y, p.r);
+      g.addColorStop(0, hsl(c, 6));
+      g.addColorStop(1, hsl(c, -32));
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fillStyle = g;
+      ctx.fill();
+    }
     ctx.restore();
 
     drawRing(p, px, match ? 0.8 + Math.sin(clock * 3 + p.phase) * 0.18 : 0.3);
