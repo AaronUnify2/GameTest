@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>Slingshot</title>
+<title>Constellation</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body {
@@ -15,13 +15,8 @@
     -webkit-user-select: none;
     user-select: none;
   }
-  #game {
-    display: block;
-    width: 100%;
-    height: 100%;
-    touch-action: none;
-    cursor: pointer;
-  }
+  #game { display: block; width: 100%; height: 100%; touch-action: none; cursor: pointer; }
+
   .hud {
     position: fixed;
     top: 0; left: 0; right: 0;
@@ -32,8 +27,25 @@
     pointer-events: none;
     font-variant-numeric: tabular-nums;
   }
-  .hud .score { font-size: 2.2rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1; }
-  .hud .best { font-size: 0.75rem; color: #7f8ba6; letter-spacing: 0.1em; padding-top: 6px; }
+  .score { font-size: 2.2rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1; }
+  .best { font-size: 0.75rem; color: #7f8ba6; letter-spacing: 0.1em; padding-top: 6px; }
+
+  .chain { margin-top: 10px; transition: opacity 0.25s ease; }
+  .chain[hidden] { display: none !important; }
+  .chain .label {
+    font-size: 0.78rem;
+    letter-spacing: 0.12em;
+    font-weight: 600;
+    display: block;
+    margin-bottom: 5px;
+  }
+  .chain .bar {
+    width: 116px; height: 3px;
+    background: rgba(255,255,255,0.12);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .chain .bar i { display: block; height: 100%; width: 100%; border-radius: 2px; }
 
   .banner {
     position: fixed;
@@ -42,14 +54,15 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 10px;
+    gap: 11px;
     text-align: center;
     padding: 24px;
     pointer-events: none;
-    transition: opacity 0.25s ease;
+    transition: opacity 0.3s ease;
   }
-  .banner h1 { font-size: 2.4rem; letter-spacing: -0.03em; font-weight: 700; }
-  .banner p { color: #98a3bd; font-size: 0.98rem; max-width: 23rem; line-height: 1.55; }
+  .banner.gone { opacity: 0; }
+  .banner h1 { font-size: 2.5rem; letter-spacing: -0.03em; font-weight: 700; }
+  .banner p { color: #98a3bd; font-size: 0.98rem; max-width: 24rem; line-height: 1.6; }
   .banner .key {
     display: inline-block;
     border: 1px solid #39435c;
@@ -58,45 +71,22 @@
     font-size: 0.85em;
     color: #cfd7e8;
   }
-  .banner .big { font-size: 3.8rem; font-weight: 700; letter-spacing: -0.03em; line-height: 1; }
-  .banner .sub { color: #ffe08a; font-size: 0.9rem; letter-spacing: 0.04em; }
-  .hidden { opacity: 0; }
 
-  /* Score-of-10 message. pointer-events stays none so it never swallows a tap. */
-  .love {
+  .nav {
     position: fixed;
-    inset: 0;
-    display: flex;
-    align-items: flex-start;
-    justify-content: center;
-    /* Sits above the ship, which the camera holds at mid-height - the game
-       keeps running underneath, so the message must not cover the play area. */
-    padding: 17vh 24px 0;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.55s ease;
-  }
-  .love.show { opacity: 1; }
-  .love .msg {
-    font-size: 2.7rem;
-    font-weight: 700;
-    letter-spacing: -0.02em;
+    left: 0; right: 0; bottom: 0;
     text-align: center;
-    line-height: 1.25;
-    color: #ffdfe9;
-    text-shadow: 0 0 26px rgba(255,90,150,0.6), 0 0 70px rgba(255,50,120,0.4);
-    transform: scale(0.86);
-    transition: transform 0.7s cubic-bezier(0.2, 0.9, 0.25, 1.25);
+    padding: 14px;
+    font-size: 0.76rem;
+    letter-spacing: 0.06em;
   }
-  .love.show .msg { transform: scale(1); }
-  .love .msg span { display: block; font-size: 1.6rem; color: #ff9ec2; margin-top: 6px; }
+  .nav a { color: #5d6880; text-decoration: none; border-bottom: 1px solid transparent; }
+  .nav a:hover { color: #9fb0d0; border-bottom-color: #465270; }
 
   @media (max-width: 420px) {
-    .banner h1 { font-size: 1.9rem; }
-    .banner .big { font-size: 3rem; }
-    .hud .score { font-size: 1.8rem; }
-    .love .msg { font-size: 1.9rem; }
-    .love .msg span { font-size: 1.2rem; }
+    .banner h1 { font-size: 2rem; }
+    .score { font-size: 1.8rem; }
+    .chain .bar { width: 96px; }
   }
 </style>
 </head>
@@ -104,15 +94,24 @@
 <canvas id="game"></canvas>
 
 <div class="hud">
-  <div class="score" id="score">0</div>
+  <div>
+    <div class="score" id="score">0</div>
+    <div class="chain" id="chain" hidden>
+      <span class="label" id="chainLabel">CHAIN &times;1</span>
+      <div class="bar"><i id="chainBar"></i></div>
+    </div>
+  </div>
   <div class="best" id="best">BEST 0</div>
 </div>
 
-<div class="banner" id="banner"></div>
-
-<div class="love" id="love">
-  <div class="msg">I love you, Morgan<span>&#9829;</span></div>
+<div class="banner" id="banner">
+  <h1>Constellation</h1>
+  <p>Release from orbit and drift until another world catches you. Land on a matching colour to draw a line between them.</p>
+  <p>Keep the colour going and the chain grows. Break it, and the shape you drew is banked and gone.</p>
+  <p><span class="key">tap</span> or <span class="key">space</span> to release</p>
 </div>
+
+<div class="nav"><a href="slingshot.html">&larr; Slingshot</a></div>
 
 <script>
 (function () {
@@ -123,19 +122,36 @@
   var scoreEl = document.getElementById('score');
   var bestEl = document.getElementById('best');
   var bannerEl = document.getElementById('banner');
-  var loveEl = document.getElementById('love');
+  var chainEl = document.getElementById('chain');
+  var chainLabelEl = document.getElementById('chainLabel');
+  var chainBarEl = document.getElementById('chainBar');
 
   // ---- tuning -------------------------------------------------------------
-  var ORBIT_SPEED = 255;    // px/s travelled along an orbit
-  var LAUNCH_BOOST = 1.14;  // how much faster you fly than you orbited
-  var MAX_FLIGHT = 1050;    // px of unbroken flight before you're lost to space
-  var STAR_GAP = 44;        // how far a star floats above its planet's surface
-  var PICKUP = 20;          // how close you must pass to collect one
-  var LOVE_AT = 10;         // score that triggers the message
-  var LOVE_MS = 4600;       // how long it stays on screen
-  var TILE = 1400;          // background starfield tile size
+  var ORBIT_SPEED = 250;   // px/s along an orbit
+  var LAUNCH_BOOST = 1.15; // how much faster you fly than you orbited
+  var CELL = 310;          // world grid pitch - one planet per cell
+  var FILL = 0.92;         // chance a cell actually holds a planet
+  var CHAIN_TIME = 7;      // seconds allowed between links before the chain dies
+  var AIM_LEN = 430;       // length of the predicted-path guide
+  var SEEK = 1100;         // how far to look for the next matching world
+  var TILE = 1400;         // background starfield tile
 
-  var W = 0, H = 0, dpr = 1;
+  // Four widely separated hues, each with its own ring style so the colours
+  // are not the only thing telling them apart.
+  var COLOURS = [
+    { h: 212, s: 90, l: 66, ring: 'solid'  },  // blue
+    { h: 38,  s: 92, l: 60, ring: 'dashed' },  // amber
+    { h: 312, s: 76, l: 64, ring: 'double' },  // magenta
+    { h: 138, s: 60, l: 46, ring: 'dotted' }   // green, deliberately darker
+  ];
+
+  // Lightness and alpha vary per use; hue and saturation identify the colour.
+  function hsl(c, dl, a) {
+    var l = Math.max(4, Math.min(96, c.l + (dl || 0)));
+    return 'hsla(' + c.h + ',' + c.s + '%,' + l + '%,' + (a === undefined ? 1 : a) + ')';
+  }
+
+  var W = 0, H = 0, dpr = 1, scale = 1;
 
   function resize() {
     dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -143,142 +159,205 @@
     H = canvas.clientHeight;
     canvas.width = Math.round(W * dpr);
     canvas.height = Math.round(H * dpr);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    // Zoom out on narrow screens so a useful slice of the field stays visible.
+    scale = Math.max(0.6, Math.min(1, W / 900));
   }
 
-  // ---- background starfield ----------------------------------------------
+  // ---- deterministic world ------------------------------------------------
+  // Planets are a pure function of their grid cell, so the field can be culled
+  // and regenerated freely - fly away and back and it is identical.
+  function mulberry32(a) {
+    return function () {
+      a = a + 0x6D2B79F5 | 0;
+      var t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+
+  function cellSeed(cx, cy) {
+    var h = Math.imul(cx, 374761393) + Math.imul(cy, 668265263) | 0;
+    h = Math.imul(h ^ h >>> 13, 1274126177);
+    return (h ^ h >>> 16) >>> 0;
+  }
+
+  var cells = new Map();
+
+  function planetForCell(cx, cy) {
+    var key = cx + ',' + cy;
+    if (cells.has(key)) return cells.get(key);
+    var rnd = mulberry32(cellSeed(cx, cy));
+    var planet = null;
+    // The origin cell always has a world - it is where the player starts.
+    if (rnd() < FILL || (cx === 0 && cy === 0)) {
+      var r = 22 + rnd() * 22;
+      planet = {
+        key: key,
+        x: (cx + 0.18 + rnd() * 0.64) * CELL,
+        y: (cy + 0.18 + rnd() * 0.64) * CELL,
+        r: r,
+        capture: r + 78,
+        colour: Math.floor(rnd() * COLOURS.length),
+        spin: (rnd() < 0.5 ? -1 : 1) * (0.2 + rnd() * 0.3),
+        phase: rnd() * Math.PI * 2
+      };
+    }
+    cells.set(key, planet);
+    return planet;
+  }
+
+  function planetsAround(wx, wy, pad) {
+    var out = [];
+    var x0 = Math.floor((wx - pad) / CELL), x1 = Math.floor((wx + pad) / CELL);
+    var y0 = Math.floor((wy - pad) / CELL), y1 = Math.floor((wy + pad) / CELL);
+    for (var cx = x0; cx <= x1; cx++) {
+      for (var cy = y0; cy <= y1; cy++) {
+        var p = planetForCell(cx, cy);
+        if (p) out.push(p);
+      }
+    }
+    return out;
+  }
+
+  var pruneClock = 0;
+  function pruneCells() {
+    if (cells.size < 1500) return;
+    var keys = [];
+    cells.forEach(function (p, key) {
+      var parts = key.split(',');
+      var wx = (+parts[0] + 0.5) * CELL, wy = (+parts[1] + 0.5) * CELL;
+      if (Math.abs(wx - cam.x) > 3600 || Math.abs(wy - cam.y) > 3600) keys.push(key);
+    });
+    for (var i = 0; i < keys.length; i++) cells.delete(keys[i]);
+  }
+
+  // ---- background ---------------------------------------------------------
   var bgStars = [];
-  for (var i = 0; i < 170; i++) {
+  for (var i = 0; i < 180; i++) {
     bgStars.push({
-      x: Math.random() * TILE,
-      y: Math.random() * TILE,
-      z: 0.15 + Math.random() * 0.4,
+      x: Math.random() * TILE, y: Math.random() * TILE,
+      z: 0.12 + Math.random() * 0.35,
       s: 0.5 + Math.random() * 1.5,
-      a: 0.25 + Math.random() * 0.55
+      a: 0.22 + Math.random() * 0.5
     });
   }
 
   // ---- state --------------------------------------------------------------
-  var planets, ship, cam, mode, planetIdx, angle, dir, radius;
-  var ignoreIdx, pendingIdx, pendingLastD, flightDist;
-  var score, maxIdx, starsGot, best, trail, sparks, hearts;
-  var started, clock, loveShown, loveTimer;
+  var ship = { x: 0, y: 0, vx: 0, vy: 0 };
+  var cam = { x: 0, y: 0 };
+  var mode = 'orbit';
+  var orbitPlanet = null, angle = 0, dir = 1, radius = 0;
+  var ignoreKey = null, pending = null, pendingD = 0;
 
-  try { best = parseInt(localStorage.getItem('slingshot-best'), 10) || 0; }
+  var chainColour = -1, chainLen = 0, chainScore = 0, chainTimer = 0;
+  var lastPlanet = null;
+  var links = [], fadingLinks = [], linkedPairs = new Set();
+  var target = null, targetClock = 0;
+
+  var score = 0, best = 0, started = false, clock = 0;
+  var trail = [], pops = [];
+
+  try { best = parseInt(localStorage.getItem('constellation-best'), 10) || 0; }
   catch (e) { best = 0; }
 
-  function makePlanet(x, y, r, hue) {
-    return {
-      x: x, y: y, r: r,
-      capture: r + 76,
-      hue: hue,
-      spin: (Math.random() < 0.5 ? -1 : 1) * (0.25 + Math.random() * 0.3),
-      star: { a: Math.random() * Math.PI * 2, got: false }
-    };
-  }
+  function pairKey(a, b) { return a < b ? a + '|' + b : b + '|' + a; }
 
-  function addPlanet() {
-    var prev = planets[planets.length - 1];
-    var n = planets.length;
-    // Gaps widen as you get further out, then stop so it stays playable.
-    var gap = 250 + Math.min(n * 7, 190) + Math.random() * 130;
-    var y = (Math.random() * 2 - 1) * 200;
-    var r = 24 + Math.random() * 26;
-    // Step the hue a long way each world so neighbours never look alike.
-    var hue = (n * 63 + Math.random() * 20) % 360;
-    planets.push(makePlanet(prev.x + gap, y, r, hue));
-  }
-
-  function ensurePlanets() {
-    while (planets.length < maxIdx + 9) addPlanet();
-  }
-
-  function reset() {
-    planets = [makePlanet(0, 0, 42, 200)];
-    planets[0].star.got = true;   // no freebie on the starting world
-    ship = { x: 0, y: 0, vx: 0, vy: 0 };
-    cam = { x: -W * 0.4, y: -H * 0.5 };
-    mode = 'orbit';
-    planetIdx = 0;
+  function start() {
+    var p = planetForCell(0, 0);
+    orbitPlanet = p;
+    radius = p.r + 46;
     angle = Math.PI;
     dir = 1;
-    radius = planets[0].r + 52;
-    ignoreIdx = -1;
-    pendingIdx = -1;
-    pendingLastD = 0;
-    flightDist = 0;
-    score = 0;
-    maxIdx = 0;
-    starsGot = 0;
-    trail = [];
-    sparks = [];
-    hearts = [];
-    started = false;
-    clock = 0;
-    hideLove();
-    loveShown = false;   // so it lands again on every fresh run
-    ensurePlanets();
-    updateScore();
+    mode = 'orbit';
+    ship.x = p.x + Math.cos(angle) * radius;
+    ship.y = p.y + Math.sin(angle) * radius;
+    cam.x = p.x; cam.y = p.y;
+    lastPlanet = p;
+    chainColour = p.colour;
+    chainLen = 1;
+    chainScore = 0;
+    chainTimer = CHAIN_TIME;
     bestEl.textContent = 'BEST ' + best;
-    showBanner('<h1>Slingshot</h1>' +
-      '<p>You are caught in orbit. Let go at the right moment and momentum carries you to the next world.</p>' +
-      '<p>Dive close for a tight orbit, graze wide for a lazy one &mdash; the stars sit in between.</p>' +
-      '<p><span class="key">tap</span> or <span class="key">space</span> to release</p>');
+    updateHud();
   }
 
-  function showBanner(html) {
-    bannerEl.innerHTML = html;
-    bannerEl.classList.remove('hidden');
-  }
-
-  // ---- the message --------------------------------------------------------
-  function hideLove() {
-    clearTimeout(loveTimer);
-    loveEl.classList.remove('show');
-  }
-
-  function showLove() {
-    loveEl.classList.add('show');
-    heartBurst();
-    clearTimeout(loveTimer);
-    loveTimer = setTimeout(function () { loveEl.classList.remove('show'); }, LOVE_MS);
-  }
-
-  function heartBurst() {
-    for (var i = 0; i < 22; i++) {
-      hearts.push({
-        x: ship.x + (Math.random() * 2 - 1) * 50,
-        y: ship.y + (Math.random() * 2 - 1) * 36,
-        vx: (Math.random() * 2 - 1) * 48,
-        vy: -34 - Math.random() * 66,
-        size: 10 + Math.random() * 16,
-        life: 1
-      });
-    }
-  }
-
-  function updateScore() {
-    score = maxIdx + starsGot;
+  // ---- scoring ------------------------------------------------------------
+  function updateHud() {
     scoreEl.textContent = String(score);
-    if (!loveShown && score >= LOVE_AT) {
-      loveShown = true;
-      showLove();
+    if (chainLen >= 1 && chainColour >= 0) {
+      chainEl.hidden = false;
+      var c = COLOURS[chainColour];
+      chainLabelEl.textContent = 'CHAIN ×' + chainLen;
+      chainLabelEl.style.color = hsl(c, 8);
+      chainBarEl.style.background = hsl(c, 0);
+    } else {
+      chainEl.hidden = true;
     }
   }
 
-  // ---- input --------------------------------------------------------------
-  function press() {
-    if (mode === 'dead') { reset(); return; }
-    if (mode !== 'orbit') return;
-    if (!started) { started = true; bannerEl.classList.add('hidden'); }
+  function pop(text, x, y, colour) {
+    pops.push({ text: text, x: x, y: y, colour: colour, life: 1 });
+  }
 
+  function breakChain() {
+    if (chainLen >= 2) pop('chain ×' + chainLen + '  +' + chainScore, ship.x, ship.y - 40, -1);
+    for (var i = 0; i < links.length; i++) {
+      links[i].life = 1;
+      fadingLinks.push(links[i]);
+    }
+    links = [];
+    linkedPairs.clear();
+    chainLen = 0;
+    chainColour = -1;
+    chainScore = 0;
+    lastPlanet = null;
+  }
+
+  function land(p) {
+    if (chainColour < 0) {
+      chainColour = p.colour;
+      chainLen = 1;
+      chainScore = 0;
+    } else if (p.colour === chainColour) {
+      var pk = pairKey(lastPlanet.key, p.key);
+      // Re-flying a line you already drew keeps the chain alive but pays
+      // nothing, so bouncing between two worlds is not a scoring strategy.
+      if (!linkedPairs.has(pk)) {
+        chainLen++;
+        score += chainLen;
+        chainScore += chainLen;
+        linkedPairs.add(pk);
+        links.push({ ax: lastPlanet.x, ay: lastPlanet.y, bx: p.x, by: p.y, colour: p.colour, life: 1 });
+        pop('+' + chainLen, p.x, p.y - p.r - 16, p.colour);
+        if (score > best) {
+          best = score;
+          try { localStorage.setItem('constellation-best', String(best)); } catch (e) {}
+          bestEl.textContent = 'BEST ' + best;
+        }
+      }
+    } else {
+      breakChain();
+      chainColour = p.colour;
+      chainLen = 1;
+      chainScore = 0;
+    }
+    lastPlanet = p;
+    chainTimer = CHAIN_TIME;
+    target = null;
+    targetClock = 0;
+    updateHud();
+  }
+
+  // ---- flight -------------------------------------------------------------
+  function press() {
+    if (mode !== 'orbit') return;
+    if (!started) { started = true; bannerEl.classList.add('gone'); }
     var speed = ORBIT_SPEED * LAUNCH_BOOST;
-    // Leave along the tangent, in whichever direction you were already circling.
     ship.vx = -Math.sin(angle) * dir * speed;
     ship.vy = Math.cos(angle) * dir * speed;
-    ignoreIdx = planetIdx;
-    pendingIdx = -1;
-    flightDist = 0;
+    ignoreKey = orbitPlanet.key;
+    pending = null;
+    orbitPlanet = null;
     mode = 'fly';
   }
 
@@ -287,130 +366,107 @@
     if (e.code === 'Space' || e.code === 'Enter' || e.key === ' ') { e.preventDefault(); press(); }
   });
 
-  // ---- capture ------------------------------------------------------------
-  function die() {
-    mode = 'dead';
-    hideLove();
-    if (score > best) {
-      best = score;
-      try { localStorage.setItem('slingshot-best', String(best)); } catch (e) {}
-    }
-    bestEl.textContent = 'BEST ' + best;
-    showBanner('<div class="big">' + score + '</div>' +
-      '<p class="sub">' + maxIdx + ' worlds &middot; ' + starsGot + ' stars</p>' +
-      '<p>Lost to open space.</p>' +
-      '<p><span class="key">tap</span> to try again</p>');
-  }
-
-  // Locks into a circular orbit. Called at closest approach, where the ship's
-  // velocity is already perpendicular to the radius - so the handover is smooth.
-  function captureAt(i, r) {
-    var p = planets[i];
-    var rx = ship.x - p.x;
-    var ry = ship.y - p.y;
+  // Lock into orbit at closest approach, where velocity is already
+  // perpendicular to the radius - so the handover is seamless.
+  function captureAt(p, r) {
+    var rx = ship.x - p.x, ry = ship.y - p.y;
     radius = Math.max(p.r + 18, Math.min(r, p.capture - 6));
     angle = Math.atan2(ry, rx);
-    // Keep circling the way you were already going: sign of the r x v cross product.
     dir = (rx * ship.vy - ry * ship.vx) >= 0 ? 1 : -1;
-    planetIdx = i;
+    orbitPlanet = p;
     mode = 'orbit';
-    pendingIdx = -1;
-    ignoreIdx = -1;
-    if (i > maxIdx) { maxIdx = i; ensurePlanets(); }
-    updateScore();
+    pending = null;
+    ignoreKey = null;
+    land(p);
   }
 
-  function starPos(p) {
-    var a = p.star.a + clock * p.spin;
-    var rr = p.r + STAR_GAP;
-    return { x: p.x + Math.cos(a) * rr, y: p.y + Math.sin(a) * rr };
-  }
-
-  function burst(x, y) {
-    for (var i = 0; i < 12; i++) {
-      var a = Math.random() * Math.PI * 2;
-      var s = 40 + Math.random() * 90;
-      sparks.push({ x: x, y: y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 1 });
+  function findTarget() {
+    if (chainColour < 0 || !lastPlanet) return null;
+    var list = planetsAround(ship.x, ship.y, SEEK);
+    var best = null, bestD = Infinity;
+    for (var i = 0; i < list.length; i++) {
+      var p = list[i];
+      if (p.colour !== chainColour) continue;
+      if (p.key === lastPlanet.key) continue;
+      if (linkedPairs.has(pairKey(lastPlanet.key, p.key))) continue;
+      var d = Math.hypot(p.x - ship.x, p.y - ship.y);
+      if (d < bestD) { bestD = d; best = p; }
     }
+    return best;
   }
 
-  // ---- simulation ---------------------------------------------------------
   function update(dt) {
     clock += dt;
 
     if (mode === 'orbit') {
-      var p = planets[planetIdx];
       angle += dir * (ORBIT_SPEED / radius) * dt;
-      ship.x = p.x + Math.cos(angle) * radius;
-      ship.y = p.y + Math.sin(angle) * radius;
-
-    } else if (mode === 'fly') {
+      ship.x = orbitPlanet.x + Math.cos(angle) * radius;
+      ship.y = orbitPlanet.y + Math.sin(angle) * radius;
+    } else {
       ship.x += ship.vx * dt;
       ship.y += ship.vy * dt;
-      flightDist += Math.hypot(ship.vx, ship.vy) * dt;
 
-      if (pendingIdx >= 0) {
-        // Already inside a capture field: coast until closest approach.
-        var pp = planets[pendingIdx];
-        var pd = Math.hypot(ship.x - pp.x, ship.y - pp.y);
-        if (pd <= pp.r + 18 || pd > pendingLastD) captureAt(pendingIdx, pendingLastD);
-        else pendingLastD = pd;
+      if (pending) {
+        var d = Math.hypot(ship.x - pending.x, ship.y - pending.y);
+        if (d <= pending.r + 18 || d > pendingD) captureAt(pending, pendingD);
+        else pendingD = d;
       } else {
-        for (var i = 0; i < planets.length; i++) {
-          var pl = planets[i];
-          var d = Math.hypot(ship.x - pl.x, ship.y - pl.y);
-          if (i === ignoreIdx) {
-            if (d > pl.capture + 6) ignoreIdx = -1;
+        var near = planetsAround(ship.x, ship.y, 200);
+        for (var i = 0; i < near.length; i++) {
+          var p = near[i];
+          var dd = Math.hypot(ship.x - p.x, ship.y - p.y);
+          if (p.key === ignoreKey) {
+            if (dd > p.capture + 6) ignoreKey = null;
             continue;
           }
-          if (d < pl.capture) { pendingIdx = i; pendingLastD = d; break; }
-        }
-        if (pendingIdx < 0 && flightDist > MAX_FLIGHT) die();
-      }
-    }
-
-    if (mode !== 'dead') {
-      for (var j = 0; j < planets.length; j++) {
-        var q = planets[j];
-        if (q.star.got) continue;
-        var sp = starPos(q);
-        if (Math.hypot(ship.x - sp.x, ship.y - sp.y) < PICKUP) {
-          q.star.got = true;
-          starsGot++;
-          burst(sp.x, sp.y);
-          updateScore();
+          if (dd < p.capture) { pending = p; pendingD = dd; break; }
         }
       }
-      trail.push({ x: ship.x, y: ship.y });
-      if (trail.length > 30) trail.shift();
     }
 
-    for (var k = sparks.length - 1; k >= 0; k--) {
-      var s = sparks[k];
-      s.x += s.vx * dt; s.y += s.vy * dt;
-      s.vx *= 0.94; s.vy *= 0.94;
-      s.life -= dt * 1.7;
-      if (s.life <= 0) sparks.splice(k, 1);
+    // The chain clock is the only pressure in the game - there is no death.
+    if (started && chainColour >= 0) {
+      chainTimer -= dt;
+      if (chainTimer <= 0) {
+        breakChain();
+        if (mode === 'orbit') {
+          chainColour = orbitPlanet.colour;
+          chainLen = 1;
+          lastPlanet = orbitPlanet;
+          chainTimer = CHAIN_TIME;
+        }
+        updateHud();
+      }
+    }
+    chainBarEl.style.width = Math.max(0, Math.min(1, chainTimer / CHAIN_TIME)) * 100 + '%';
+
+    targetClock -= dt;
+    if (targetClock <= 0) { target = findTarget(); targetClock = 0.12; }
+
+    trail.push({ x: ship.x, y: ship.y });
+    if (trail.length > 34) trail.shift();
+
+    for (var f = fadingLinks.length - 1; f >= 0; f--) {
+      fadingLinks[f].life -= dt * 0.8;
+      if (fadingLinks[f].life <= 0) fadingLinks.splice(f, 1);
+    }
+    for (var q = pops.length - 1; q >= 0; q--) {
+      pops[q].y -= 26 * dt;
+      pops[q].life -= dt * 0.75;
+      if (pops[q].life <= 0) pops.splice(q, 1);
     }
 
-    for (var m = hearts.length - 1; m >= 0; m--) {
-      var h = hearts[m];
-      h.x += h.vx * dt; h.y += h.vy * dt;
-      h.vx *= 0.97; h.vy += 9 * dt;
-      h.life -= dt * 0.3;
-      if (h.life <= 0) hearts.splice(m, 1);
-    }
+    var tx = mode === 'orbit' ? orbitPlanet.x : ship.x;
+    var ty = mode === 'orbit' ? orbitPlanet.y : ship.y;
+    var k = 1 - Math.pow(0.0016, dt);
+    cam.x += (tx - cam.x) * k;
+    cam.y += (ty - cam.y) * k;
 
-    // While orbiting, follow the planet rather than the ship - no camera wobble.
-    var tx, ty;
-    if (mode === 'orbit') { tx = planets[planetIdx].x; ty = planets[planetIdx].y; }
-    else { tx = ship.x; ty = ship.y; }
-    var f = 1 - Math.pow(0.0015, dt);
-    cam.x += ((tx - W * 0.4) - cam.x) * f;
-    cam.y += ((ty - H * 0.5) - cam.y) * f;
+    pruneClock -= dt;
+    if (pruneClock <= 0) { pruneCells(); pruneClock = 2; }
   }
 
-  // ---- rendering ----------------------------------------------------------
+  // ---- drawing ------------------------------------------------------------
   function drawBackground() {
     var g = ctx.createLinearGradient(0, 0, 0, H);
     g.addColorStop(0, '#070a16');
@@ -418,8 +474,7 @@
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, W, H);
 
-    var cols = Math.ceil(W / TILE) + 1;
-    var rows = Math.ceil(H / TILE) + 1;
+    var cols = Math.ceil(W / TILE) + 1, rows = Math.ceil(H / TILE) + 1;
     for (var i = 0; i < bgStars.length; i++) {
       var st = bgStars[i];
       var bx = ((st.x - cam.x * st.z) % TILE + TILE) % TILE;
@@ -433,109 +488,182 @@
     }
   }
 
-  function drawPlanet(p) {
-    var x = p.x - cam.x, y = p.y - cam.y;
-    if (x < -260 || x > W + 260 || y < -260 || y > H + 260) return;
+  function drawLink(l, alpha, px) {
+    var c = COLOURS[l.colour];
+    ctx.beginPath();
+    ctx.moveTo(l.ax, l.ay);
+    ctx.lineTo(l.bx, l.by);
+    ctx.strokeStyle = hsl(c, 10, alpha);
+    ctx.lineWidth = 2 * px;
+    ctx.stroke();
+  }
+
+  function drawRing(p, px, alpha) {
+    var c = COLOURS[p.colour];
+    ctx.strokeStyle = hsl(c, 10, alpha);
+    ctx.lineWidth = 1.4 * px;
+    if (c.ring === 'dashed') ctx.setLineDash([9 * px, 7 * px]);
+    else if (c.ring === 'dotted') ctx.setLineDash([1.6 * px, 6 * px]);
+    else ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r + 9, 0, Math.PI * 2);
+    ctx.stroke();
+    if (c.ring === 'double') {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r + 14, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+  }
+
+  function drawPlanet(p, px) {
+    var c = COLOURS[p.colour];
+    var match = p.colour === chainColour;
 
     ctx.beginPath();
-    ctx.arc(x, y, p.capture, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(120,150,220,0.16)';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([3, 7]);
+    ctx.arc(p.x, p.y, p.capture, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(120,150,220,' + (match ? 0.2 : 0.09) + ')';
+    ctx.lineWidth = px;
+    ctx.setLineDash([3 * px, 7 * px]);
     ctx.stroke();
     ctx.setLineDash([]);
 
-    var g = ctx.createRadialGradient(x - p.r * 0.35, y - p.r * 0.35, p.r * 0.1, x, y, p.r);
-    g.addColorStop(0, 'hsl(' + p.hue + ',55%,62%)');
-    g.addColorStop(1, 'hsl(' + p.hue + ',60%,26%)');
+    ctx.save();
+    if (!match) ctx.globalAlpha = 0.7;
+    var g = ctx.createRadialGradient(p.x - p.r * 0.35, p.y - p.r * 0.35, p.r * 0.1, p.x, p.y, p.r);
+    g.addColorStop(0, hsl(c, 6));
+    g.addColorStop(1, hsl(c, -32));
     ctx.beginPath();
-    ctx.arc(x, y, p.r, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
     ctx.fillStyle = g;
     ctx.fill();
-    ctx.strokeStyle = 'hsla(' + p.hue + ',70%,78%,0.5)';
-    ctx.lineWidth = 1.2;
+    ctx.restore();
+
+    drawRing(p, px, match ? 0.8 + Math.sin(clock * 3 + p.phase) * 0.18 : 0.3);
+  }
+
+  function drawTarget(px) {
+    if (!target) return;
+    var c = COLOURS[target.colour];
+    var a = target.phase + clock * target.spin;
+    var rr = target.r + 34;
+    var sx = target.x + Math.cos(a) * rr, sy = target.y + Math.sin(a) * rr;
+    var pulse = 4.2 + Math.sin(clock * 4) * 1.2;
+    ctx.beginPath();
+    ctx.arc(sx, sy, (pulse + 6) * 1, 0, Math.PI * 2);
+    ctx.fillStyle = hsl(c, 16, 0.18);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(sx, sy, pulse, 0, Math.PI * 2);
+    ctx.fillStyle = hsl(c, 18);
+    ctx.fill();
+  }
+
+  function drawAim(px) {
+    if (mode !== 'orbit') return;
+    var tx = -Math.sin(angle) * dir, ty = Math.cos(angle) * dir;
+    ctx.save();
+    ctx.setLineDash([5 * px, 9 * px]);
+    ctx.strokeStyle = 'rgba(150,235,255,0.4)';
+    ctx.lineWidth = 1.6 * px;
+    ctx.beginPath();
+    ctx.moveTo(ship.x + tx * 14, ship.y + ty * 14);
+    ctx.lineTo(ship.x + tx * AIM_LEN, ship.y + ty * AIM_LEN);
     ctx.stroke();
-
-    if (!p.star.got) {
-      var sp = starPos(p);
-      var sx = sp.x - cam.x, sy = sp.y - cam.y;
-      var pulse = 4.5 + Math.sin(clock * 4 + p.star.a) * 1.1;
-      ctx.beginPath();
-      ctx.arc(sx, sy, pulse + 6, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(255,225,140,0.13)';
-      ctx.fill();
-      ctx.beginPath();
-      ctx.arc(sx, sy, pulse, 0, Math.PI * 2);
-      ctx.fillStyle = '#ffe08a';
-      ctx.fill();
-    }
+    ctx.restore();
   }
 
-  function drawSparks() {
-    for (var i = 0; i < sparks.length; i++) {
-      var s = sparks[i];
-      ctx.beginPath();
-      ctx.arc(s.x - cam.x, s.y - cam.y, 2.2 * s.life + 0.5, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(255,224,138,' + Math.max(s.life, 0) + ')';
-      ctx.fill();
-    }
-  }
-
-  function drawHearts() {
-    if (!hearts.length) return;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    for (var i = 0; i < hearts.length; i++) {
-      var h = hearts[i];
-      ctx.font = h.size + 'px serif';
-      ctx.fillStyle = 'rgba(255,120,165,' + Math.max(h.life, 0) * 0.9 + ')';
-      ctx.fillText('♥', h.x - cam.x, h.y - cam.y);
-    }
-  }
-
-  function drawShip() {
+  function drawShip(px) {
     for (var i = 1; i < trail.length; i++) {
       var t = i / trail.length;
       ctx.beginPath();
-      ctx.moveTo(trail[i - 1].x - cam.x, trail[i - 1].y - cam.y);
-      ctx.lineTo(trail[i].x - cam.x, trail[i].y - cam.y);
-      ctx.strokeStyle = 'rgba(120,220,255,' + (t * 0.55) + ')';
-      ctx.lineWidth = t * 3;
+      ctx.moveTo(trail[i - 1].x, trail[i - 1].y);
+      ctx.lineTo(trail[i].x, trail[i].y);
+      ctx.strokeStyle = 'rgba(120,220,255,' + t * 0.5 + ')';
+      ctx.lineWidth = t * 2.6 * px;
       ctx.stroke();
     }
-
-    if (mode === 'dead') return;
-
-    var heading;
-    if (mode === 'orbit') heading = Math.atan2(Math.cos(angle) * dir, -Math.sin(angle) * dir);
-    else heading = Math.atan2(ship.vy, ship.vx);
-
-    var x = ship.x - cam.x, y = ship.y - cam.y;
+    var heading = mode === 'orbit'
+      ? Math.atan2(Math.cos(angle) * dir, -Math.sin(angle) * dir)
+      : Math.atan2(ship.vy, ship.vx);
     ctx.beginPath();
-    ctx.arc(x, y, 13, 0, Math.PI * 2);
+    ctx.arc(ship.x, ship.y, 13 * px, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(140,240,255,0.10)';
     ctx.fill();
-
     ctx.save();
-    ctx.translate(x, y);
+    ctx.translate(ship.x, ship.y);
     ctx.rotate(heading);
+    ctx.scale(px, px);
     ctx.beginPath();
-    ctx.moveTo(9, 0);
-    ctx.lineTo(-6, 5.5);
-    ctx.lineTo(-3, 0);
-    ctx.lineTo(-6, -5.5);
+    ctx.moveTo(9, 0); ctx.lineTo(-6, 5.5); ctx.lineTo(-3, 0); ctx.lineTo(-6, -5.5);
     ctx.closePath();
     ctx.fillStyle = '#8ef0ff';
     ctx.fill();
     ctx.restore();
   }
 
+  function drawPops(px) {
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (var i = 0; i < pops.length; i++) {
+      var o = pops[i];
+      ctx.font = 700 + ' ' + (15 * px) + 'px system-ui, sans-serif';
+      ctx.fillStyle = o.colour >= 0
+        ? hsl(COLOURS[o.colour], 14, Math.max(o.life, 0))
+        : 'rgba(232,236,245,' + Math.max(o.life, 0) + ')';
+      ctx.fillText(o.text, o.x, o.y);
+    }
+  }
+
+  // Edge marker so the next matching world is findable when it is off-screen.
+  function drawBeacon() {
+    if (!target) return;
+    var sx = (target.x - cam.x) * scale + W / 2;
+    var sy = (target.y - cam.y) * scale + H / 2;
+    var m = 26;
+    if (sx > m && sx < W - m && sy > m && sy < H - m) return;
+    var cxp = W / 2, cyp = H / 2;
+    var dx = sx - cxp, dy = sy - cyp;
+    var k = Math.min((W / 2 - m) / Math.abs(dx || 0.001), (H / 2 - m) / Math.abs(dy || 0.001));
+    var ex = cxp + dx * k, ey = cyp + dy * k;
+    var c = COLOURS[target.colour];
+    ctx.save();
+    ctx.translate(ex, ey);
+    ctx.rotate(Math.atan2(dy, dx));
+    ctx.beginPath();
+    ctx.moveTo(9, 0); ctx.lineTo(-6, 6); ctx.lineTo(-6, -6);
+    ctx.closePath();
+    ctx.fillStyle = hsl(c, 10);
+    ctx.fill();
+    ctx.restore();
+  }
+
   function draw() {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     drawBackground();
-    for (var i = 0; i < planets.length; i++) drawPlanet(planets[i]);
-    drawSparks();
-    drawHearts();
-    drawShip();
+
+    ctx.save();
+    ctx.translate(W / 2, H / 2);
+    ctx.scale(scale, scale);
+    ctx.translate(-cam.x, -cam.y);
+
+    var px = 1 / scale;   // keeps stroke weights constant on screen
+    var fade = Math.max(0, Math.min(1, chainTimer / CHAIN_TIME));
+
+    for (var f = 0; f < fadingLinks.length; f++) drawLink(fadingLinks[f], fadingLinks[f].life * 0.5, px);
+    for (var l = 0; l < links.length; l++) drawLink(links[l], 0.35 + fade * 0.55, px);
+
+    var view = Math.hypot(W, H) / (2 * scale) + 200;
+    var list = planetsAround(cam.x, cam.y, view);
+    for (var i = 0; i < list.length; i++) drawPlanet(list[i], px);
+
+    drawTarget(px);
+    drawAim(px);
+    drawShip(px);
+    drawPops(px);
+    ctx.restore();
+
+    drawBeacon();
   }
 
   // ---- loop ---------------------------------------------------------------
@@ -551,23 +679,43 @@
 
   window.addEventListener('resize', resize);
   resize();
-  reset();
+  start();
   requestAnimationFrame(frame);
 
   // Exposed so the page can be driven from a console or an automated test.
-  window.__slingshot = {
+  window.__constellation = {
     press: press,
     state: function () {
       return {
-        mode: mode, score: score, planetIdx: planetIdx, maxIdx: maxIdx,
-        starsGot: starsGot, x: ship.x, y: ship.y, angle: angle, dir: dir,
-        radius: radius, vx: ship.vx, vy: ship.vy,
-        loveShown: loveShown, loveVisible: loveEl.classList.contains('show'),
-        hearts: hearts.length,
-        planets: planets.map(function (p) {
-          return { x: p.x, y: p.y, r: p.r, capture: p.capture, got: p.star.got };
-        })
+        mode: mode, score: score, chainLen: chainLen, chainColour: chainColour,
+        chainTimer: chainTimer, chainScore: chainScore, links: links.length,
+        x: ship.x, y: ship.y, angle: angle, dir: dir, radius: radius,
+        vx: ship.vx, vy: ship.vy, cells: cells.size, started: started,
+        lastKey: lastPlanet ? lastPlanet.key : null,
+        orbitKey: orbitPlanet ? orbitPlanet.key : null,
+        orbitColour: orbitPlanet ? orbitPlanet.colour : -1,
+        target: target ? { key: target.key, x: target.x, y: target.y, colour: target.colour } : null
       };
+    },
+    near: function (pad) {
+      return planetsAround(ship.x, ship.y, pad || 600).map(function (p) {
+        return { key: p.key, x: p.x, y: p.y, r: p.r, capture: p.capture, colour: p.colour };
+      });
+    },
+    setChainTime: function (v) { CHAIN_TIME = v; },
+    // Culling is only safe if a cell regenerates identically. This drops the
+    // whole cache and checks the rebuilt field matches what was there.
+    regen: function () {
+      function snap() {
+        return planetsAround(ship.x, ship.y, 900).map(function (p) {
+          return p.key + ':' + p.x.toFixed(4) + ':' + p.y.toFixed(4) +
+                 ':' + p.r.toFixed(4) + ':' + p.colour;
+        }).sort().join('|');
+      }
+      var before = snap();
+      cells.clear();
+      var after = snap();
+      return { count: before.split('|').length, identical: before === after };
     }
   };
 })();
